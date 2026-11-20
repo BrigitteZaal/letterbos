@@ -4,11 +4,18 @@ const board = document.querySelector('#board');
 const guide = document.querySelector('#guide');
 const modes = [...document.querySelectorAll('[data-mode]')];
 const hero = document.querySelector('.hero');
-const count = 6;
+let level = 1;
+const levelInfo = {1: {words: 6, flash: 6}, 2: {words: 8, flash: 8}};
 const vocab = {
   b: ['bal', 'beer', 'boek', 'been', 'boom', 'bed', 'bus', 'bij', 'bel', 'boot'],
   d: ['dak', 'doos', 'dop', 'duif', 'deur', 'dier', 'das', 'duim', 'dik', 'dun']
 };
+const vocab2 = {
+  b: ['baard', 'band', 'bieb', 'bips', 'blij', 'blijf', 'boer', 'berg', 'brood', 'bril', 'bloem', 'brug'],
+  d: ['dorp', 'dans', 'duin', 'doel', 'dekt', 'drinkt', 'dreun', 'draak', 'droom', 'durf', 'deeg', 'doek']
+};
+const syllables = ['ba','be','bi','bo','bu','da','de','di','do','du'];
+const levelBar = () => `<div class="levels" role="group" aria-label="Niveau">${[[1,'Niveau 1','start'],[2,'Niveau 2','moeilijker']].map(([n,t,sub]) => `<button type="button" data-level="${n}" aria-pressed="${level === n}"><strong>${t}</strong><span>${sub}</span></button>`).join('')}</div>`;
 const tasks = {
   body: ['Stamp drie keer als een beer.', 'Spreid je armen. Fladder drie keer als een duif.', 'Tik op je knieën en steek dan je armen in de lucht. Doe het drie keer.', 'Zet drie grote berenstappen op de plaats.'],
   fingers: ['Tik met je duim tegen elke vingertop.', 'Maak met je duim en wijsvinger een rondje. Open en sluit het drie keer.', 'Laat twee vingers als pootjes over de tafel lopen.', 'Teken met één vinger een grote letter in de lucht.']
@@ -26,7 +33,7 @@ const primary = (action, text) => `<button type="button" class="primary" data-ac
 const soft = (action, text, attrs = '') => `<button type="button" class="soft" data-action="${action}" ${attrs}>${text}</button>`;
 const focus = selector => board.querySelector(selector)?.focus({preventScroll: true});
 const header = (title, info, progress = '') => `<div class="board-top"><div><h2 tabindex="-1">${title}</h2><p>${info}</p></div>${progress}</div>`;
-const progress = index => `<div class="progress" aria-label="Kaart ${index + 1} van ${count}"><span aria-hidden="true">${index + 1} / ${count}</span><div class="dots" aria-hidden="true">${Array.from({length: count}, (_, i) => `<span class="dot ${i < index ? 'is-done' : i === index ? 'current' : ''}"></span>`).join('')}</div></div>`;
+const progress = (index, count) => `<div class="progress" aria-label="Kaart ${index + 1} van ${count}"><span aria-hidden="true">${index + 1} / ${count}</span><div class="dots" aria-hidden="true">${Array.from({length: count}, (_, i) => `<span class="dot ${i < index ? 'is-done' : i === index ? 'current' : ''}"></span>`).join('')}</div></div>`;
 
 let mode = 'words';
 let words, flash, timer;
@@ -38,8 +45,12 @@ const FLASH_GAP = 700;
 let liveStroke = null;
 
 function resetWords(first = false) {
-  const left = shuffle(vocab.b).filter(w => !first || w !== 'bal').slice(0, first ? 2 : 3);
-  const right = shuffle(vocab.d).slice(0, 3);
+  clearTimeout(wordTimer);
+  const list = level === 2 ? vocab2 : vocab;
+  const half = levelInfo[level].words / 2;
+  first = first && level === 1;
+  const left = shuffle(list.b).filter(w => !first || w !== 'bal').slice(0, first ? half - 1 : half);
+  const right = shuffle(list.d).slice(0, half);
   words = {deck: [...(first ? ['bal'] : []), ...shuffle([...left, ...right])], index: 0, status: 'ready', hint: false};
 }
 function clearClock() {
@@ -48,22 +59,28 @@ function clearClock() {
 }
 function resetFlash() {
   clearClock();
-  flash = {deck: shuffle(['b','b','b','d','d','d']), index: 0, status: 'ready'};
+  const half = levelInfo[level].flash / 2;
+  const deck = level === 2
+    ? [...shuffle(syllables.slice(0,5)).slice(0,half-1), 'b', ...shuffle(syllables.slice(5)).slice(0,half-1), 'd']
+    : [...Array(half).fill('b'), ...Array(half).fill('d')];
+  flash = {deck: shuffle(deck), index: 0, status: 'ready'};
 }
 function finish(title, info, restart, next, nextLabel) {
   return `<div class="finish">${svg('star')}<h2 tabindex="-1">${title}</h2><p>${info}</p><div class="split">${primary(restart,'Nog een rondje')}${soft(next,nextLabel)}</div></div>`;
 }
 function renderWords() {
   const {deck,index,status,hint} = words;
-  if (status === 'done') return finish('Rondje klaar!', 'Goed geoefend met Beer en Duif.', 'restart-words', 'go-move', 'Even bewegen');
+  if (status === 'done') return levelBar() + finish('Rondje klaar!', level === 2 ? 'Knap! Ook de moeilijke woorden gelukt.' : 'Goed geoefend met Beer en Duif.', 'restart-words', 'go-move', 'Even bewegen');
   const word = deck[index];
+  const count = deck.length;
+  const plain = level === 2;
   const feedback = status === 'correct' ? `Ja, ${word} begint met een ${word[0]}!` : status === 'retry' ? 'Kijk nog eens naar de eerste letter.' : '';
-  const choice = (letter, animal, label) => `<button type="button" class="choice ${status === 'correct' && word[0] === letter ? 'is-correct' : ''}" data-answer="${letter}" ${status === 'correct' ? 'aria-disabled="true"' : ''} aria-label="${letter} van ${label}">${svg(animal,'class="animal-small"')}<span class="letter" aria-hidden="true">${letter}</span><span class="choice-note" aria-hidden="true">${label}</span></button>`;
-  return header('Waar hoort het woord?', 'Kijk naar de eerste letter.', progress(index)) + `
+  const choice = (letter, animal, label) => `<button type="button" class="choice ${status === 'correct' && word[0] === letter ? 'is-correct' : ''}" data-answer="${letter}" ${status === 'correct' ? 'aria-disabled="true"' : ''} aria-label="${plain ? letter : `${letter} van ${label}`}">${plain ? '' : svg(animal,'class="animal-small"')}<span class="letter" aria-hidden="true">${letter}</span>${plain ? '' : `<span class="choice-note" aria-hidden="true">${label}</span>`}</button>`;
+  return levelBar() + header('Waar hoort het woord?', plain ? 'Langere woorden. Kijk goed naar de eerste letter.' : 'Kijk naar de eerste letter.', progress(index, count)) + `
     <div class="play-grid">
       <div class="stage"><div class="paper-card word" tabindex="-1"><span>${hint ? `<span class="mark-first">${word[0]}</span>${word.slice(1)}` : word}</span></div></div>
       <div class="sort-side">
-        <div class="choices">${choice('b','bear','beer')}${choice('d','pigeon','duif')}</div>
+        <div class="choices ${plain ? 'plain' : ''}">${choice('b','bear','beer')}${choice('d','pigeon','duif')}</div>
         <div class="below"><p class="feedback" role="status">${feedback}</p>
         ${status === 'correct' ? '' : soft('hint',hint ? 'Verberg tip' : 'Even kijken',`aria-expanded="${hint}" aria-controls="hint"`)}</div>
       </div>
@@ -72,13 +89,14 @@ function renderWords() {
 }
 function renderFlash() {
   const {deck,index,status} = flash;
-  if (status === 'done') return finish('Geflitst!', 'Je hebt zes letterkaartjes bekeken.', 'restart-flash', 'go-words', 'Naar woorden');
+  const count = deck.length;
+  if (status === 'done') return levelBar() + finish('Geflitst!', `Je hebt ${count} kaartjes bekeken.`, 'restart-flash', 'go-words', 'Naar woorden');
   const visible = status === 'shown';
   const speed = (p,label) => `<label><input name="pace" type="radio" value="${p}" ${pace === p ? 'checked' : ''} ${visible ? 'disabled' : ''}>${label}</label>`;
   const command = status === 'ready' ? primary('show','Toon letter') : visible ? primary('hide', index === count - 1 ? 'Rondje klaar' : 'Volgende letter') : `<p class="feedback" role="status">${index === count - 1 ? 'Bijna klaar…' : 'Daar komt de volgende…'}</p>`;
-  return header('Flits een letter', 'Kijk en zeg de letterklank hardop.', progress(index)) + `
+  return levelBar() + header('Flits een letter', level === 2 ? 'Zeg de klank hardop, ook als er een klinker bij staat.' : 'Kijk en zeg de letterklank hardop.', progress(index, count)) + `
     <div class="play-grid">
-      <div class="stage"><div class="paper-card flash-card" aria-live="polite" ${visible ? '' : 'aria-label="Kaartje dicht"'}>${visible ? deck[index] : svg('bolt')}</div></div>
+      <div class="stage"> <div class="paper-card flash-card ${visible && deck[index].length > 1 ? 'is-syllable' : ''}" aria-live="polite" ${visible ? '' : 'aria-label="Kaartje dicht"'}>${visible ? deck[index] : svg('bolt')}</div></div>
       <div class="controls">
         <fieldset><legend>Hoe lang kijken?</legend><div class="speeds">${speed(0,'Zelf bepalen')}${speed(2000,'2 sec.')}${speed(1000,'1 sec.')}</div></fieldset>
         ${command}
@@ -129,7 +147,7 @@ function showFlash() {
 function nextFlash(silent = false) {
   clearClock();
   if (flash.status !== 'hidden') return;
-  if (flash.index + 1 === count) { flash.status = 'done'; if (!silent) { render(); focus('h2'); } return; }
+  if (flash.index + 1 === flash.deck.length) { flash.status = 'done'; if (!silent) { render(); focus('h2'); } return; }
   flash.index++;
   if (silent) { flash.status = 'ready'; return; }
   showFlash();
@@ -141,11 +159,20 @@ function hideFlash() {
   render();
   timer = setTimeout(() => nextFlash(), FLASH_GAP);
 }
+function setLevel(n) {
+  if (n === level) return;
+  level = n;
+  clearClock();
+  resetWords();
+  resetFlash();
+  render();
+  focus(`[data-level="${n}"]`);
+}
 function nextWord(silent = false) {
   clearTimeout(wordTimer);
   wordTimer = undefined;
   if (words.status !== 'correct') return;
-  if (words.index + 1 === count) words.status = 'done';
+  if (words.index + 1 === words.deck.length) words.status = 'done';
   else { words.index++; words.status = 'ready'; }
   if (silent || mode !== 'words') return;
   render();
@@ -165,7 +192,8 @@ function pick(letter) {
 document.addEventListener('click', event => {
   const button = event.target.closest('button');
   if (!button) return;
-  const {action,mode: nextMode,answer} = button.dataset;
+  const {action,mode: nextMode,answer,level: nextLevel} = button.dataset;
+  if (nextLevel) return setLevel(Number(nextLevel));
   if (nextMode) return switchMode(nextMode);
   if (answer) return pick(answer);
   switch (action) {
