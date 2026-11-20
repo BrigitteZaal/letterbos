@@ -32,6 +32,8 @@ let mode = 'words';
 let words, flash, timer;
 const move = {kind: 'body', body: 0, fingers: 0, letter: 'b'};
 let pace = 0;
+let wordTimer;
+const WORD_PAUSE = 1100;
 let liveStroke = null;
 
 function resetWords(first = false) {
@@ -62,7 +64,7 @@ function renderWords() {
       <div class="sort-side">
         <div class="choices">${choice('b','bear','beer')}${choice('d','pigeon','duif')}</div>
         <div class="below"><p class="feedback" role="status">${feedback}</p>
-        ${status === 'correct' ? primary('word-next',index === count - 1 ? 'Rondje klaar' : 'Volgende') : soft('hint',hint ? 'Verberg tip' : 'Even kijken',`aria-expanded="${hint}" aria-controls="hint"`)}</div>
+        ${status === 'correct' ? '' : soft('hint',hint ? 'Verberg tip' : 'Even kijken',`aria-expanded="${hint}" aria-controls="hint"`)}</div>
       </div>
     </div>
     <div id="hint" class="extra" ${hint && status !== 'correct' ? '' : 'hidden'}><p>Bij <strong>b</strong> staat het stokje links. Bij <strong>d</strong> staat het stokje rechts.</p></div>`;
@@ -111,6 +113,7 @@ function switchMode(next, viaBoard = false) {
   if (next === mode) return;
   if (mode === 'flash' && flash.status === 'shown') flash.status = 'hidden';
   clearClock();
+  if (mode === 'words' && words.status === 'correct') nextWord(true);
   mode = next;
   render();
   if (viaBoard) focus('h2');
@@ -129,13 +132,23 @@ function hideFlash() {
   render();
   if (!guide.open) focus('[data-action="flash-next"]');
 }
+function nextWord(silent = false) {
+  clearTimeout(wordTimer);
+  wordTimer = undefined;
+  if (words.status !== 'correct') return;
+  if (words.index + 1 === count) words.status = 'done';
+  else { words.index++; words.status = 'ready'; }
+  if (silent || mode !== 'words') return;
+  render();
+  focus(words.status === 'done' ? 'h2' : '.word');
+}
 function pick(letter) {
   if (mode !== 'words' || words.status === 'correct' || words.status === 'done') return;
   words.status = words.deck[words.index][0] === letter ? 'correct' : 'retry';
   if (words.status === 'correct') {
     words.hint = false;
     render();
-    focus('[data-action="word-next"]');
+    wordTimer = setTimeout(() => nextWord(), WORD_PAUSE);
   } else {
     board.querySelector('.feedback').textContent = 'Kijk nog eens naar de eerste letter.';
   }
@@ -151,12 +164,8 @@ document.addEventListener('click', event => {
     case 'close-guide': guide.close(); break;
     case 'go-move': switchMode('move',true); break;
     case 'go-words': switchMode('words',true); break;
-    case 'restart-words': resetWords(); render(); focus('.word'); break;
+    case 'restart-words': clearTimeout(wordTimer); resetWords(); render(); focus('.word'); break;
     case 'hint': words.hint = !words.hint; render(); focus('[data-action="hint"]'); break;
-    case 'word-next':
-      if (words.index + 1 === count) { words.status = 'done'; render(); focus('h2'); }
-      else { words.index++; words.status = 'ready'; render(); focus('.word'); }
-      break;
     case 'restart-flash': resetFlash(); render(); focus('[data-action="show"]'); break;
     case 'show': showFlash(); break;
     case 'hide': hideFlash(); break;
