@@ -34,6 +34,7 @@ const move = {kind: 'body', body: 0, fingers: 0, letter: 'b'};
 let pace = 0;
 let wordTimer;
 const WORD_PAUSE = 1100;
+const FLASH_GAP = 700;
 let liveStroke = null;
 
 function resetWords(first = false) {
@@ -74,14 +75,13 @@ function renderFlash() {
   if (status === 'done') return finish('Geflitst!', 'Je hebt zes letterkaartjes bekeken.', 'restart-flash', 'go-words', 'Naar woorden');
   const visible = status === 'shown';
   const speed = (p,label) => `<label><input name="pace" type="radio" value="${p}" ${pace === p ? 'checked' : ''} ${visible ? 'disabled' : ''}>${label}</label>`;
-  const command = status === 'ready' ? primary('show','Toon letter') : visible ? primary('hide','Verberg') : primary('flash-next', index === count - 1 ? 'Rondje klaar' : 'Volgende letter');
+  const command = status === 'ready' ? primary('show','Toon letter') : visible ? primary('hide', index === count - 1 ? 'Rondje klaar' : 'Volgende letter') : `<p class="feedback" role="status">${index === count - 1 ? 'Bijna klaar…' : 'Daar komt de volgende…'}</p>`;
   return header('Flits een letter', 'Kijk en zeg de letterklank hardop.', progress(index)) + `
     <div class="play-grid">
       <div class="stage"><div class="paper-card flash-card" aria-live="polite" ${visible ? '' : 'aria-label="Kaartje dicht"'}>${visible ? deck[index] : svg('bolt')}</div></div>
       <div class="controls">
         <fieldset><legend>Hoe lang kijken?</legend><div class="speeds">${speed(0,'Zelf bepalen')}${speed(2000,'2 sec.')}${speed(1000,'1 sec.')}</div></fieldset>
         ${command}
-        ${status === 'hidden' ? soft('show','Nog eens kijken') : ''}
       </div>
     </div>`;
 }
@@ -113,6 +113,7 @@ function switchMode(next, viaBoard = false) {
   if (next === mode) return;
   if (mode === 'flash' && flash.status === 'shown') flash.status = 'hidden';
   clearClock();
+  if (mode === 'flash' && flash.status === 'hidden') nextFlash(true);
   if (mode === 'words' && words.status === 'correct') nextWord(true);
   mode = next;
   render();
@@ -125,12 +126,20 @@ function showFlash() {
   focus('[data-action="hide"]');
   if (pace) timer = setTimeout(hideFlash,pace);
 }
+function nextFlash(silent = false) {
+  clearClock();
+  if (flash.status !== 'hidden') return;
+  if (flash.index + 1 === count) { flash.status = 'done'; if (!silent) { render(); focus('h2'); } return; }
+  flash.index++;
+  if (silent) { flash.status = 'ready'; return; }
+  showFlash();
+}
 function hideFlash() {
   if (mode !== 'flash' || flash.status !== 'shown') return;
   clearClock();
   flash.status = 'hidden';
   render();
-  if (!guide.open) focus('[data-action="flash-next"]');
+  timer = setTimeout(() => nextFlash(), FLASH_GAP);
 }
 function nextWord(silent = false) {
   clearTimeout(wordTimer);
@@ -169,10 +178,6 @@ document.addEventListener('click', event => {
     case 'restart-flash': resetFlash(); render(); focus('[data-action="show"]'); break;
     case 'show': showFlash(); break;
     case 'hide': hideFlash(); break;
-    case 'flash-next':
-      if (flash.index + 1 === count) { flash.status = 'done'; render(); focus('h2'); }
-      else { flash.index++; showFlash(); }
-      break;
     case 'body':
     case 'fingers':
       if (move.kind === action) break;
