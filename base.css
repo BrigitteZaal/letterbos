@@ -159,3 +159,28 @@ dialog::backdrop { background: #273a32a0; }
 .choices.plain .letter { font-size: clamp(3.4rem, 2.6rem + 3vw, 5rem); }
 .flash-card.is-syllable { font-size: clamp(4.3rem, 4vw + 3.3rem, 6.4rem); letter-spacing: .02em; }
 @media (max-width: 420px) { .levels { display: grid; } .levels button { min-width: 0; } }
+
+/* Eigen woordenlijst */
+.levels.has-custom { grid-template-columns: repeat(3, 1fr); }
+.custom-setup { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.3fr); gap: 16px; align-items: start; }
+.photo-box, .list-box { background: #f3f1e6; border-radius: 16px; padding: 14px; display: grid; gap: 10px; }
+.photo-button { position: relative; cursor: pointer; justify-content: center; }
+.photo-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.photo-button:focus-within { outline: 3px solid #557552; outline-offset: 3px; }
+.photo-button.is-busy { opacity: .7; cursor: progress; }
+.photo-button svg { width: 24px; height: 24px; }
+.ocr-status { font-weight: 750; min-height: 1.2em; margin: 0; }
+.small { font-size: var(--text-xs, .82rem); color: var(--soft-ink); margin: 0; }
+.list-box textarea { width: 100%; font: 600 1.1rem/1.4 Arial, sans-serif; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--white); color: var(--ink); resize: vertical; }
+.list-box textarea:focus { outline: 3px solid #557552; outline-offset: 1px; }
+.chips { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; }
+.chip { padding: 3px 11px; border-radius: 999px; font: 700 1rem Arial, sans-serif; border: 1px solid var(--line); background: var(--white); }
+.chip-b { border-color: #c98a5a; background: #fbeee2; }
+.chip-d { border-color: #8d8fb3; background: #eeeef8; }
+.custom-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; }
+.share-note { overflow-wrap: anywhere; }
+@media (max-width: 620px) { .custom-setup { grid-template-columns: 1fr; } }
+@media (max-width: 420px) { .levels.has-custom { grid-template-columns: 1fr 1fr 1fr; } .levels button { padding: 5px 4px; } }
+.word.is-long { font-size: clamp(2rem, 1.4rem + 2.6vw, 3.6rem); }
+.word.is-xlong { font-size: clamp(1.55rem, 1rem + 2vw, 2.8rem); }
+.word.is-long, .word.is-xlong { width: min(92%, 360px); }

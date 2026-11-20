@@ -15,7 +15,13 @@ const vocab2 = {
   d: ['dorp', 'dans', 'duin', 'doel', 'dekt', 'drinkt', 'dreun', 'draak', 'droom', 'durf', 'deeg', 'doek']
 };
 const syllables = ['ba','be','bi','bo','bu','da','de','di','do','du'];
-const levelBar = () => `<div class="levels" role="group" aria-label="Niveau">${[[1,'Niveau 1','start'],[2,'Niveau 2','moeilijker']].map(([n,t,sub]) => `<button type="button" data-level="${n}" aria-pressed="${level === n}"><strong>${t}</strong><span>${sub}</span></button>`).join('')}</div>`;
+const STORE_KEY = 'letterbos-eigen-lijst';
+const OCR_SRC = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+const custom = {words: [], on: false, editing: false, busy: false, draft: '', note: ''};
+const escapeHtml = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const splitWords = text => (String(text).toLowerCase().match(/[a-zà-ÿ]+/g) || []).filter(w => w.length > 1 && w.length <= 14);
+const usable = text => [...new Set(splitWords(text).filter(w => w[0] === 'b' || w[0] === 'd'))].slice(0, 40);
+const levelBar = (withCustom = false) => `<div class="levels ${withCustom ? 'has-custom' : ''}" role="group" aria-label="Niveau">${[[1,'Niveau 1','start'],[2,'Niveau 2','moeilijker'],...(withCustom ? [['eigen','Eigen lijst','met foto']] : [])].map(([n,t,sub]) => `<button type="button" data-level="${n}" aria-pressed="${n === 'eigen' ? custom.on : level === n && !(withCustom && custom.on)}"><strong>${t}</strong><span>${sub}</span></button>`).join('')}</div>`;
 const tasks = {
   body: ['Stamp drie keer als een beer.', 'Spreid je armen. Fladder drie keer als een duif.', 'Tik op je knieën en steek dan je armen in de lucht. Doe het drie keer.', 'Zet drie grote berenstappen op de plaats.'],
   fingers: ['Tik met je duim tegen elke vingertop.', 'Maak met je duim en wijsvinger een rondje. Open en sluit het drie keer.', 'Laat twee vingers als pootjes over de tafel lopen.', 'Teken met één vinger een grote letter in de lucht.']
@@ -46,6 +52,10 @@ let liveStroke = null;
 
 function resetWords(first = false) {
   clearTimeout(wordTimer);
+  if (custom.on) {
+    words = {deck: shuffle(custom.words).slice(0, 10), index: 0, status: custom.words.length ? 'ready' : 'empty', hint: false};
+    return;
+  }
   const list = level === 2 ? vocab2 : vocab;
   const half = levelInfo[level].words / 2;
   first = first && level === 1;
@@ -68,17 +78,54 @@ function resetFlash() {
 function finish(title, info, restart, next, nextLabel) {
   return `<div class="finish">${svg('star')}<h2 tabindex="-1">${title}</h2><p>${info}</p><div class="split">${primary(restart,'Nog een rondje')}${soft(next,nextLabel)}</div></div>`;
 }
+function countText(text) {
+  const list = usable(text);
+  const b = list.filter(w => w[0] === 'b').length;
+  const d = list.length - b;
+  if (!list.length) return 'Nog geen woorden met b of d.';
+  return `${list.length} ${list.length === 1 ? 'woord doet' : 'woorden doen'} mee: ${b} met b, ${d} met d.`;
+}
+function chipList(text) {
+  return usable(text).map(w => `<li class="chip chip-${w[0]}">${escapeHtml(w)}</li>`).join('');
+}
+function renderCustomSetup() {
+  const hasList = custom.words.length > 0;
+  const draft = custom.draft;
+  return levelBar(true) + header('Eigen woordenlijst', 'Maak een foto van de woorden van school, of typ ze zelf.') + `
+    <div class="custom-setup">
+      <div class="photo-box">
+        <label class="primary photo-button ${custom.busy ? 'is-busy' : ''}">
+          <input type="file" accept="image/*" data-photo ${custom.busy ? 'disabled' : ''}>
+          ${svg('camera')}<span>${custom.busy ? 'Even lezen…' : 'Foto maken of kiezen'}</span>
+        </label>
+        <p class="ocr-status" role="status">${escapeHtml(custom.note)}</p>
+        <p class="small">Lukt het best met gedrukte letters, recht van boven en met goed licht. De foto blijft op dit apparaat.</p>
+      </div>
+      <div class="list-box">
+        <label for="custom-words"><strong>De woorden</strong> <span class="small">(pas gerust aan)</span></label>
+        <textarea id="custom-words" rows="6" spellcheck="false" placeholder="bijvoorbeeld: bal, dak, boek, deur">${escapeHtml(draft)}</textarea>
+        <p class="small count" aria-live="polite">${countText(draft)} Andere woorden worden overgeslagen.</p>
+        <ul class="chips" aria-label="Woorden die meedoen">${chipList(draft)}</ul>
+        <div class="split">${primary('save-custom','Opslaan en spelen')}${hasList ? soft('cancel-custom','Annuleren') : ''}</div>
+      </div>
+    </div>`;
+}
+function customTools() {
+  return `<div class="custom-tools">${soft('edit-custom','Lijst aanpassen')}${soft('share-custom','Link voor de klas kopiëren')}<span class="small share-note" role="status"></span></div>`;
+}
 function renderWords() {
+  if (custom.on && (custom.editing || !custom.words.length)) return renderCustomSetup();
   const {deck,index,status,hint} = words;
-  if (status === 'done') return levelBar() + finish('Rondje klaar!', level === 2 ? 'Knap! Ook de moeilijke woorden gelukt.' : 'Goed geoefend met Beer en Duif.', 'restart-words', 'go-move', 'Even bewegen');
+  const bar = levelBar(true) + (custom.on ? customTools() : '');
+  if (status === 'done') return bar + finish('Rondje klaar!', custom.on ? 'Goed geoefend met je eigen woorden.' : level === 2 ? 'Knap! Ook de moeilijke woorden gelukt.' : 'Goed geoefend met Beer en Duif.', 'restart-words', 'go-move', 'Even bewegen');
   const word = deck[index];
   const count = deck.length;
-  const plain = level === 2;
+  const plain = level === 2 && !custom.on;
   const feedback = status === 'correct' ? `Ja, ${word} begint met een ${word[0]}!` : status === 'retry' ? 'Kijk nog eens naar de eerste letter.' : '';
   const choice = (letter, animal, label) => `<button type="button" class="choice ${status === 'correct' && word[0] === letter ? 'is-correct' : ''}" data-answer="${letter}" ${status === 'correct' ? 'aria-disabled="true"' : ''} aria-label="${plain ? letter : `${letter} van ${label}`}">${plain ? '' : svg(animal,'class="animal-small"')}<span class="letter" aria-hidden="true">${letter}</span>${plain ? '' : `<span class="choice-note" aria-hidden="true">${label}</span>`}</button>`;
-  return levelBar() + header('Waar hoort het woord?', plain ? 'Langere woorden. Kijk goed naar de eerste letter.' : 'Kijk naar de eerste letter.', progress(index, count)) + `
+  return bar + header('Waar hoort het woord?', plain ? 'Langere woorden. Kijk goed naar de eerste letter.' : 'Kijk naar de eerste letter.', progress(index, count)) + `
     <div class="play-grid">
-      <div class="stage"><div class="paper-card word" tabindex="-1"><span>${hint ? `<span class="mark-first">${word[0]}</span>${word.slice(1)}` : word}</span></div></div>
+      <div class="stage"><div class="paper-card word ${word.length > 9 ? 'is-xlong' : word.length > 6 ? 'is-long' : ''}" tabindex="-1"><span>${hint ? `<span class="mark-first">${word[0]}</span>${word.slice(1)}` : word}</span></div></div>
       <div class="sort-side">
         <div class="choices ${plain ? 'plain' : ''}">${choice('b','bear','beer')}${choice('d','pigeon','duif')}</div>
         <div class="below"><p class="feedback" role="status">${feedback}</p>
@@ -160,7 +207,19 @@ function hideFlash() {
   timer = setTimeout(() => nextFlash(), FLASH_GAP);
 }
 function setLevel(n) {
-  if (n === level) return;
+  if (n === 'eigen') {
+    if (custom.on) return;
+    custom.on = true;
+    custom.editing = !custom.words.length;
+    custom.draft = custom.words.join(', ');
+    clearTimeout(wordTimer);
+    resetWords();
+    render();
+    focus('[data-level="eigen"]');
+    return;
+  }
+  if (n === level && !(mode === 'words' && custom.on)) return;
+  if (mode === 'words') custom.on = false;
   level = n;
   clearClock();
   resetWords();
@@ -193,7 +252,7 @@ document.addEventListener('click', event => {
   const button = event.target.closest('button');
   if (!button) return;
   const {action,mode: nextMode,answer,level: nextLevel} = button.dataset;
-  if (nextLevel) return setLevel(Number(nextLevel));
+  if (nextLevel) return setLevel(nextLevel === 'eigen' ? 'eigen' : Number(nextLevel));
   if (nextMode) return switchMode(nextMode);
   if (answer) return pick(answer);
   switch (action) {
@@ -217,14 +276,110 @@ document.addEventListener('click', event => {
     case 'trace-d':
       if (move.kind === 'trace' && move.letter === action.at(-1)) break;
       move.kind = 'trace'; move.letter = action.at(-1); render(); focus(`[data-action="${action}"]`); break;
+    case 'save-custom': saveCustom(); break;
+    case 'cancel-custom': custom.editing = false; render(); focus('h2'); break;
+    case 'edit-custom': clearTimeout(wordTimer); custom.editing = true; custom.draft = custom.words.join(', '); custom.note = ''; render(); focus('#custom-words'); break;
+    case 'share-custom': shareCustom(button); break;
     case 'erase': board.querySelector('.ink')?.replaceChildren(); break;
   }
 });
 board.addEventListener('change', event => {
   if (event.target.name === 'pace') pace = Number(event.target.value);
+  if (event.target.matches('[data-photo]') && event.target.files[0]) readPhoto(event.target.files[0]);
 });
+board.addEventListener('input', event => {
+  if (event.target.id !== 'custom-words') return;
+  custom.draft = event.target.value;
+  board.querySelector('.count').textContent = countText(custom.draft) + ' Andere woorden worden overgeslagen.';
+  board.querySelector('.chips').innerHTML = chipList(custom.draft);
+});
+function storeList(list) {
+  try { list.length ? localStorage.setItem(STORE_KEY, JSON.stringify(list)) : localStorage.removeItem(STORE_KEY); } catch (e) { /* opslag niet beschikbaar */ }
+}
+function loadList() {
+  try { const v = JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); return Array.isArray(v) ? usable(v.join(' ')) : []; } catch (e) { return []; }
+}
+function saveCustom() {
+  const box = board.querySelector('#custom-words');
+  if (box) custom.draft = box.value;
+  const list = usable(custom.draft);
+  if (list.length < 2) {
+    custom.note = 'Zet minstens twee woorden met b of d in de lijst.';
+    board.querySelector('.ocr-status').textContent = custom.note;
+    return;
+  }
+  custom.words = list;
+  custom.editing = false;
+  custom.note = '';
+  storeList(list);
+  resetWords();
+  render();
+  focus('.word');
+}
+function shareLink() {
+  return `${location.origin}${location.pathname}?lijst=${encodeURIComponent(custom.words.join(','))}`;
+}
+async function shareCustom(button) {
+  const note = board.querySelector('.share-note');
+  const link = shareLink();
+  try {
+    await navigator.clipboard.writeText(link);
+    note.textContent = 'Gekopieerd. Plak de link in een bericht aan de klas.';
+  } catch (e) {
+    note.textContent = link;
+  }
+  button.focus();
+}
+let ocrLoader;
+function loadOcr() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  ocrLoader ??= new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = OCR_SRC;
+    el.onload = () => resolve(window.Tesseract);
+    el.onerror = () => { ocrLoader = undefined; reject(new Error('laden mislukt')); };
+    document.head.append(el);
+  });
+  return ocrLoader;
+}
+async function shrink(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+function setNote(text) {
+  custom.note = text;
+  const el = board.querySelector('.ocr-status');
+  if (el) el.textContent = text;
+}
+async function readPhoto(file) {
+  const box = board.querySelector('#custom-words');
+  if (box) custom.draft = box.value;
+  custom.busy = true;
+  custom.note = 'De leesmachine wordt geladen…';
+  render();
+  try {
+    const T = await loadOcr();
+    const image = await shrink(file).catch(() => file);
+    const result = await T.recognize(image, 'nld', {logger: m => { if (m.status === 'recognizing text') setNote(`Woorden lezen… ${Math.round(m.progress * 100)}%`); }});
+    const found = [...new Set(splitWords(result.data.text))];
+    const fromPhoto = usable(found.join(' '));
+    custom.draft = [custom.draft.trim(), found.join(', ')].filter(Boolean).join(', ');
+    custom.note = fromPhoto.length ? `Gevonden: ${fromPhoto.length} ${fromPhoto.length === 1 ? 'woord' : 'woorden'} met b of d. Kijk de lijst even na.` : 'Geen woorden met b of d gevonden. Probeer een scherpere foto of typ de woorden.';
+  } catch (e) {
+    custom.note = 'Het lezen van de foto lukte niet. Controleer de internetverbinding of typ de woorden zelf.';
+  }
+  custom.busy = false;
+  render();
+  focus('#custom-words');
+}
 document.addEventListener('keydown', event => {
-  if (!guide.open && mode === 'words' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat && ['b','d'].includes(event.key)) pick(event.key);
+  if (event.target.closest?.('input, textarea')) return;
+  if (!guide.open && mode === 'words' && !(custom.on && custom.editing) && !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat && ['b','d'].includes(event.key)) pick(event.key);
 });
 function tracePoint(svgEl, event) {
   return new DOMPoint(event.clientX,event.clientY).matrixTransform(svgEl.getScreenCTM().inverse());
@@ -253,6 +408,12 @@ for (const name of ['pointerup','pointercancel','lostpointercapture']) {
   });
 }
 window.render_game_to_text = () => JSON.stringify({mode,status: mode === 'words' ? words.status : mode === 'flash' ? flash.status : move.kind,screen: board.innerText.replace(/\s+/g,' ').trim()});
+(() => {
+  const fromLink = new URLSearchParams(location.search).get('lijst');
+  const linked = fromLink ? usable(fromLink.replace(/,/g, ' ')) : [];
+  if (linked.length >= 2) { custom.words = linked; custom.on = true; storeList(linked); }
+  else custom.words = loadList();
+})();
 resetWords(true);
 resetFlash();
 render();
